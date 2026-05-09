@@ -7,6 +7,8 @@ from datetime import datetime
 # 1. Configuration - Add your specific Buy Dates here
 portfolio_data = [
     {"ticker": "HDFCBANK.NS", "qty": 38, "buy_price": 790.00, "buy_date": "2026-04-27"},
+    {"ticker": "HDFCBANK.NS", "qty": 38, "buy_price": 775.95, "buy_date": "2026-05-06"},
+    {"ticker": "HDFCBANK.NS", "qty": 25, "buy_price": 779.40, "buy_date": "2026-05-08"},
 ]
 
 @st.cache_data(ttl=3600)
@@ -42,35 +44,47 @@ def get_portfolio_metrics():
 
 @st.cache_data
 def get_historical_gains():
-    all_history = pd.DataFrame()
+    # 1. Get unique tickers and their earliest buy date
+    ledger = pd.DataFrame(portfolio_data)
+    ledger['buy_date'] = pd.to_datetime(ledger['buy_date'])
+    unique_tickers = ledger['ticker'].unique()
     
-    for stock in portfolio_data:
-        ticker = stock['ticker']
-        # 1. Download data
-        # We use group_by='column' to ensure a consistent structure
-        data = yf.download(ticker, start=stock['buy_date'], progress=False)
-        
-        if data.empty:
-            continue
+    all_history = pd.DataFrame()
 
-        # 2. Extract 'Close' column safely
-        # yfinance often returns a MultiIndex (Price, Ticker). We flatten it.
-        if isinstance(data.columns, pd.MultiIndex):
-            close_prices = data['Close'][ticker]
-        else:
-            close_prices = data['Close']
+    for ticker in unique_tickers:
+        # Get all transactions for this ticker
+        trades = ledger[ledger['ticker'] == ticker].sort_values('buy_date')
         
-        # 3. Calculate daily gain: (Price - Buy Price) * Qty
-        gain_series = (close_prices - stock['buy_price']) * stock['qty']
-        gain_df = gain_series.to_frame(name=f'{ticker} Gain')
+        # Download price history starting from the very first purchase
+        first_buy = trades['buy_date'].min()
+        data = yf.download(ticker, start=first_buy, progress=False)
         
-        # 4. Merge into master dataframe
-        if all_history.empty:
-            all_history = gain_df
-        else:
-            all_history = all_history.join(gain_df, how='outer')
+        if data.empty: continue
+        
+        # Flatten MultiIndex if necessary
+        prices = data['Close'][ticker] if isinstance(data.columns, pd.MultiIndex) else data['Close']
+        prices = prices.to_frame(name='Price')
+        
+        # 2. Build daily position metrics
+        prices['Total_Qty'] = 0.0
+        prices['Total_Cost'] = 0.0
+        
+        for _, trade in trades.iterrows():
+            # Add qty and cost to all dates on/after the purchase date
+            mask = prices.index >= trade['buy_date']
+            prices.loc[mask, 'Total_Qty'] += trade['qty']
+            prices.loc[mask, 'Total_Cost'] += (trade['qty'] * trade['buy_price'])
             
-    # Use ffill() to handle holidays/weekends where one market is open and others aren't
+        # 3. Calculate Running Average Price and Gain
+        prices['Avg_Price'] = prices['Total_Cost'] / prices['Total_Qty']
+        prices[f'{ticker} Gain'] = (prices['Price'] - prices['Avg_Price']) * prices['Total_Qty']
+        
+        # Merge into master df
+        if all_history.empty:
+            all_history = prices[[f'{ticker} Gain']]
+        else:
+            all_history = all_history.join(prices[[f'{ticker} Gain']], how='outer')
+            
     return all_history.ffill()
 
 # --- Streamlit UI ---
