@@ -41,8 +41,51 @@ def get_portfolio_metrics():
         })
     return pd.DataFrame(results)
 
+
+@st.cache_data
+def get_historical_gains():
+    all_history = pd.DataFrame()
+    
+    for stock in portfolio_data:
+        ticker = stock['ticker']
+        # Fetch history from buy date to today
+        df = yf.download(ticker, start=stock['buy_date'])['Close']
+        df = df.to_frame(name='Close')
+        
+        # Calculate daily gain: (Price - Buy Price) * Qty
+        df[f'{ticker} Gain'] = (df['Close'] - stock['buy_price']) * stock['qty']
+        
+        # Merge into one master dataframe
+        if all_history.empty:
+            all_history = df[[f'{ticker} Gain']]
+        else:
+            all_history = all_history.join(df[[f'{ticker} Gain']], how='outer')
+            
+    return all_history.fillna(method='ffill') # Fill non-trading days
+
 # --- Streamlit UI ---
 st.set_page_config(page_title="Portfolio Tracker", layout="wide")
+
+st.title("📈 Cumulative Gains Over Time")
+
+history_df = get_historical_gains()
+
+# Plot 1: Individual Stock Gains Over Time
+st.subheader("Daily Gain per Stock ($)")
+fig_daily = px.line(history_df, 
+                    labels={"value": "Unrealized Gain ($)", "Date": "Date"},
+                    title="Growth of Gains Since Purchase")
+st.plotly_chart(fig_daily, use_container_width=True)
+
+# Plot 2: Total Portfolio Gain Over Time
+st.subheader("Total Portfolio Performance")
+history_df['Total Portfolio Gain'] = history_df.sum(axis=1)
+fig_total = px.area(history_df, y='Total Portfolio Gain', 
+                    color_discrete_sequence=['#00CC96'],
+                    title="Aggregate Portfolio Gain ($)")
+st.plotly_chart(fig_total, use_container_width=True)
+
+
 df = get_portfolio_metrics()
 
 st.title("📊 Personal Alpha Dashboard")
