@@ -48,20 +48,32 @@ def get_historical_gains():
     
     for stock in portfolio_data:
         ticker = stock['ticker']
-        # Fetch history from buy date to today
-        df = yf.download(ticker, start=stock['buy_date'])['Close']
-        df = df.to_frame(name='Close')
+        # 1. Download data
+        # We use group_by='column' to ensure a consistent structure
+        data = yf.download(ticker, start=stock['buy_date'], progress=False)
         
-        # Calculate daily gain: (Price - Buy Price) * Qty
-        df[f'{ticker} Gain'] = (df['Close'] - stock['buy_price']) * stock['qty']
-        
-        # Merge into one master dataframe
-        if all_history.empty:
-            all_history = df[[f'{ticker} Gain']]
+        if data.empty:
+            continue
+
+        # 2. Extract 'Close' column safely
+        # yfinance often returns a MultiIndex (Price, Ticker). We flatten it.
+        if isinstance(data.columns, pd.MultiIndex):
+            close_prices = data['Close'][ticker]
         else:
-            all_history = all_history.join(df[[f'{ticker} Gain']], how='outer')
+            close_prices = data['Close']
+        
+        # 3. Calculate daily gain: (Price - Buy Price) * Qty
+        gain_series = (close_prices - stock['buy_price']) * stock['qty']
+        gain_df = gain_series.to_frame(name=f'{ticker} Gain')
+        
+        # 4. Merge into master dataframe
+        if all_history.empty:
+            all_history = gain_df
+        else:
+            all_history = all_history.join(gain_df, how='outer')
             
-    return all_history.fillna(method='ffill') # Fill non-trading days
+    # Use ffill() to handle holidays/weekends where one market is open and others aren't
+    return all_history.ffill()
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Portfolio Tracker", layout="wide")
