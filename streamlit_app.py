@@ -6,9 +6,7 @@ from datetime import datetime
 
 # 1. Configuration - Add your specific Buy Dates here
 portfolio_data = [
-    {"ticker": "MU", "qty": 10, "buy_price": 85.50, "buy_date": "2024-01-15"},
-    {"ticker": "MRVL", "qty": 15, "buy_price": 68.20, "buy_date": "2024-02-10"},
-    {"ticker": "IREDA.NS", "qty": 1213, "buy_price": 60.00, "buy_date": "2023-12-18"}
+    {"ticker": "HDFCBANK.NS", "qty": 38, "buy_price": 790.00, "buy_date": "2026-04-27"},
 ]
 
 @st.cache_data(ttl=3600)
